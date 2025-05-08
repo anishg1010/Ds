@@ -1,0 +1,482 @@
+LAB1_RMI
+CLIENT
+import java.rmi.Naming;
+import java.util.Scanner;
+
+public class Client {
+    public static void main(String args[]) {
+        try {
+            // Lookup the remote object from RMI registry
+            Adder stub = (Adder) Naming.lookup("rmi://localhost:5000/Adder");
+
+            // Take input from the user
+            Scanner sc = new Scanner(System.in);
+            System.out.print("Enter first number: ");
+            int a = sc.nextInt();
+            System.out.print("Enter second number: ");
+            int b = sc.nextInt();
+
+            sc.close();
+            // Call the remote method
+            int result = stub.add(a, b);
+            System.out.println("Result: " + result);
+
+        } catch (Exception e) {
+            System.out.println(e);
+        }
+    }
+}
+---------------------------------------
+SERVER
+import java.rmi.Naming;
+import java.rmi.registry.LocateRegistry;
+
+public class Server {
+    public static void main(String args[]) {
+        try {
+            // Start the RMI Registry on port 5000
+            LocateRegistry.createRegistry(5000);
+
+            // Create an instance of the remote object
+            Adder stub = new AdderRemote();
+
+            // Bind the remote object to the RMI registry with name "Adder"
+            Naming.rebind("rmi://localhost:5000/Adder", stub);
+
+            System.out.println("Server is ready.");
+        } catch (Exception e) {
+            System.out.println(e);
+        }
+    }
+}
+----------------------------------
+ADDERREMOTE
+import java.rmi.RemoteException;
+import java.rmi.server.UnicastRemoteObject;
+
+public class AdderRemote extends UnicastRemoteObject implements Adder {
+    AdderRemote() throws RemoteException {
+        super();
+    }
+
+    public int add(int x, int y) {
+        return x + y;
+    }
+}
+--------------------------------
+ADDER
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+
+public interface Adder extends Remote {
+    int add(int x, int y) throws RemoteException;
+}
+javac *.java
+java Server
+java Client
+
+
+
+
+
+
+
+_____________________________________________________________________________________________________________
+LAB3_MPI
+#include <mpi.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(int argc, char* argv[]) {
+    int rank, size, N = 16;
+    int data[16] = {3, 5, 8, 2, 4, 6, 1, 9, 7, 10, 11, 12, 13, 14, 15, 16};
+
+    MPI_Init(&argc, &argv);                 // Initialize the MPI environment
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // Get the rank of the process
+    MPI_Comm_size(MPI_COMM_WORLD, &size);   // Get the total number of processes
+
+    int elements_per_proc = N / size;
+    int* sub_array = (int*)malloc(sizeof(int) * elements_per_proc);
+
+    // Scatter the data to all processes
+    MPI_Scatter(data, elements_per_proc, MPI_INT, sub_array,
+                elements_per_proc, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Each process computes its partial sum
+    int partial_sum = 0;
+    for (int i = 0; i < elements_per_proc; i++) {
+        partial_sum += sub_array[i];
+    }
+
+    printf("Process %d computed partial sum: %d\n", rank, partial_sum);
+
+    // Gather all partial sums to the root process
+    int total_sum = 0;
+    MPI_Reduce(&partial_sum, &total_sum, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    // Display final sum at root
+    if (rank == 0) {
+        printf("Total sum of array is: %d\n", total_sum);
+    }
+
+    free(sub_array);
+    MPI_Finalize();  // Finalize the MPI environment
+    return 0;
+}  
+mpicc mpi.c -o mpi      
+mpirun -np 4 ./mpi
+
+
+______________________________________________________________________________________________________________________
+LAB4_BERKLEY
+
+CLIENT
+
+import java.net.Socket;
+import java.time.LocalTime;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+
+public class Client {
+    public static void main(String[] args) throws Exception {
+        Socket socket = new Socket("localhost", 5000);
+
+        LocalTime currTime = LocalTime.now();
+        String time = String.format("%02d:%02d:%02d", currTime.getHour(), currTime.getMinute(), currTime.getSecond());
+
+        System.out.println(" - Before Synchronization: " + time);
+
+        DataOutputStream output = new DataOutputStream(socket.getOutputStream());
+        output.writeUTF(time);
+
+        DataInputStream input = new DataInputStream(socket.getInputStream());
+        String syncTime = input.readUTF();
+
+        System.out.println("   After Synchronization: " + syncTime);
+
+        socket.close();
+    }
+}
+---------------------------
+Server
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.time.LocalTime;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+
+public class Server{
+	public static void main(String[] args) throws Exception{
+		ServerSocket server = new ServerSocket(5000);
+		System.out.println("Server is running on port: 5000");
+		
+		String[] clientTime = new String[3];
+		Socket[] client = new Socket[3];
+		
+		for(int i=0; i<3; i++){
+			client[i] = server.accept();
+			DataInputStream input = new DataInputStream(client[i].getInputStream());
+			clientTime[i] = input.readUTF(); 
+			System.out.println(" - Client "+(i+1)+" connected\n  Before Synchronization: "+clientTime[i]);
+		}
+		
+		int totalSeconds = 0;
+		for(int i=0; i<3; i++){
+			LocalTime timeObj = LocalTime.parse(clientTime[i]);
+			int seconds = timeObj.getHour() * 3600 + timeObj.getMinute() * 60 + timeObj.getSecond();
+			totalSeconds += seconds;
+		}
+		
+		int avgSeconds = totalSeconds / 3;
+		int avgHour = avgSeconds / 3600;
+		int avgMinu = (avgSeconds % 3600) / 60;
+		int avgSec = avgSeconds % 60;
+		
+		String syncTime = String.format("%02d:%02d:%02d", avgHour, avgMinu, avgSec);
+		System.out.println("+ Synchronized time send to all clients: "+syncTime);
+
+		for(int i=0; i<3; i++){
+			DataOutputStream output = new DataOutputStream(client[i].getOutputStream());
+			output.writeUTF(syncTime); 
+		}
+		server.close();
+	}
+}
+
+/*
++---------------------------------------------------------+
+|                  Server (Coordinator)                   |
+|                                                         |
+|  1. Waits for connections from 3 clients                |
+|  2. Collects their local times (HH:MM:SS)               |
+|  3. Calculates average time (in seconds)                |
+|  4. Sends synchronized time to all clients              |
++---------------------------------------------------------+
+              ↓           ↓           ↓
+        +----------+ +----------+ +----------+
+        | Client 1 | | Client 2 | | Client 3 |
+        +----------+ +----------+ +----------+
+          05:34:41     05:34:51     05:35:06   
+          (Before)     (Before)     (Before)
+
+                    ↓ (Server averages)
+
+             🕑 New Time: 05:34:52
+
+          05:34:52     05:34:52     05:34:52   
+           (After)      (After)      (After)
+
+*/
+
+____________________________________________________________________________________________________________________________________
+LAB5_TOKEN RING
+
+import java.util.Scanner;
+
+public class TokenRing{
+	public static void main(String[] args){
+		Scanner sc = new Scanner(System.in);
+		System.out.print("Enter number of nodes in ring: ");
+		int num = sc.nextInt();
+		System.out.println("Sequence of nodes in ring: ");
+		for(int i=0; i<num; i++){
+			System.out.print(" "+i+" -> ");
+		}
+		System.out.println("0");
+		int choice = 0;
+		int token = 0;
+		do{
+			System.out.println("----");
+			System.out.print("Enter sender: ");
+			int sender = sc.nextInt();
+			
+			System.out.print("Enter receiver: ");
+			int receiver = sc.nextInt();
+			
+			System.out.print("Enter data: ");
+			String data = sc.next();
+			
+			System.out.println("Token Passing Sequence: ");
+			for(int i=token; i<sender; i++){
+				System.out.print(i+" -> ");
+			}
+			System.out.println(sender);
+			
+			for(int i=sender; i!=receiver; i=(i+1)%num){
+				System.out.println("Data '"+data+"' is forwarded to -> "+i);
+			}
+			System.out.println("Data '"+data+"' received by receiver: "+receiver);
+			
+			token = sender;
+			System.out.println("Now the Token is with: "+sender);
+			System.out.print("If you to enter data again the press '1' or exit press '0': ");
+			choice = sc.nextInt();
+		}while(choice==1);
+	}
+}
+
+/*
+vboxuser@Ubuntu:~/Desktop/pract$ java Token
+Enter number of nodes in ring: 10
+Sequence of nodes in ring: 
+ 0 ->  1 ->  2 ->  3 ->  4 ->  5 ->  6 ->  7 ->  8 ->  9 -> 0
+----
+Enter sender: 3
+Enter receiver: 9
+Enter data: a
+Token Passing Sequence: 
+0 -> 1 -> 2 -> 3
+Data 'a' is forwarded to -> 3
+Data 'a' is forwarded to -> 4
+Data 'a' is forwarded to -> 5
+Data 'a' is forwarded to -> 6
+Data 'a' is forwarded to -> 7
+Data 'a' is forwarded to -> 8
+Data 'a' received by receiver: 9
+Now the Token is with: 3
+If you to enter data again the press '1' or exit press '0': 1
+----
+Enter sender: 6
+Enter receiver: 9
+Enter data: b
+Token Passing Sequence: 
+3 -> 4 -> 5 -> 6
+Data 'b' is forwarded to -> 6
+Data 'b' is forwarded to -> 7
+Data 'b' is forwarded to -> 8
+Data 'b' received by receiver: 9
+Now the Token is with: 6
+If you to enter data again the press '1' or exit press '0': 1
+----
+Enter sender: 9
+Enter receiver: 3
+Enter data: c
+Token Passing Sequence: 
+6 -> 7 -> 8 -> 9
+Data 'c' is forwarded to -> 9
+Data 'c' is forwarded to -> 0
+Data 'c' is forwarded to -> 1
+Data 'c' is forwarded to -> 2
+Data 'c' received by receiver: 3
+Now the Token is with: 9
+If you to enter data again the press '1' or exit press '0': 0
+vboxuser@Ubuntu:~/Desktop/pract$ 
+
+*/
+---------------------------------------------------------------------
+import java.util.Scanner;
+
+public class TokenRingMutex {
+    static class Node {
+        int id;
+        boolean requestCS = false;  // Flag to request critical section
+
+        Node(int id) {
+            this.id = id;
+        }
+
+        void enterCriticalSection() {
+            System.out.println("Process " + id + " is entering the Critical Section.");
+            try {
+                Thread.sleep(1000); // Simulating CS time
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            System.out.println("Process " + id + " is leaving the Critical Section.");
+        }
+    }
+
+    public static void main(String[] args) {
+        Scanner scan = new Scanner(System.in);
+        System.out.print("Enter number of processes in the ring: ");
+        int n = scan.nextInt();
+
+        Node[] ring = new Node[n];
+        for (int i = 0; i < n; i++) {
+            ring[i] = new Node(i);
+        }
+
+        int token = 0; // Token starts at process 0
+
+        String choice="no";
+        do {
+            System.out.print("\nEnter the process ID (0 to " + (n - 1) + ") that wants to enter CS: ");
+            int pid = scan.nextInt();
+
+            if (pid < 0 || pid >= n) {
+                System.out.println("Invalid process ID.");
+                continue;
+            }
+
+            ring[pid].requestCS = true;
+
+            // Token passing loop
+            while (true) {
+                System.out.println("Token at process " + token);
+                if (ring[token].requestCS) {
+                    ring[token].requestCS = false;
+                    ring[token].enterCriticalSection();
+                    break;
+                }
+                token = (token + 1) % n; // pass the token
+            }
+
+            System.out.print("Do you want to make another request? (yes/no): ");
+            choice = scan.next().toLowerCase();
+        } while (choice.equals("yes"));
+
+        scan.close();
+    }
+}
+__________________________________________________________________________________________________________________
+LAB6_BULLY RING
+
+class BullyElection:
+    def _init_(self, processes):
+        # List of process IDs
+        self.processes = sorted(processes)
+        # Initially assume the highest ID is the leader
+        self.leader = max(self.processes)
+
+    def start_election(self, initiator):
+        print(f"Process {initiator} starts an election.")
+        # Check all processes with higher IDs
+        higher_processes = [p for p in self.processes if p > initiator]
+
+        if not higher_processes:
+            # No higher process = becomes leader
+            self.leader = initiator
+            print(f"Process {initiator} becomes the leader.")
+        else:
+            # Inform higher processes
+            for p in higher_processes:
+                print(f"Process {initiator} sends election message to {p}")
+            print(f"Higher processes respond. One of them will continue the election.")
+            # Let the highest higher process take over election
+            self.start_election(max(higher_processes))
+
+    def get_leader(self):
+        return self.leader
+
+
+# Example usage:
+bully = BullyElection([1, 2, 3, 4, 5])
+bully.start_election(3)  # Process 3 detects failure and starts election
+print("Final leader is:", bully.get_leader())
+
+-----------------------------------------------------
+class RingElection:
+    def _init_(self, processes):
+        self.processes = sorted(processes)  # Sorted list of process IDs
+        self.n = len(self.processes)
+        self.leader = None
+
+    def start_election(self, initiator_index):
+        print(f"Process {self.processes[initiator_index]} starts an election.")
+        # Start message with initiator
+        msg = [self.processes[initiator_index]]
+        index = (initiator_index + 1) % self.n
+
+        # Pass message around the ring
+        while self.processes[index] != self.processes[initiator_index]:
+            print(f"Message passes to {self.processes[index]}")
+            msg.append(self.processes[index])
+            index = (index + 1) % self.n
+
+        # Election complete, choose the highest ID as leader
+        self.leader = max(msg)
+        print(f"Election complete. Leader is {self.leader}.")
+
+    def get_leader(self):
+        return self.leader
+
+
+# Example usage:
+ring = RingElection([1, 2, 3, 4, 5])
+ring.start_election(2)  # Process with ID 3 starts the election
+print("Final leader is:", ring.get_leader())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
